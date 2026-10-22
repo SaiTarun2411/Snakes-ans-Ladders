@@ -72,7 +72,7 @@ def board_svg(positions):
             points.append((x1+(x2-x1)*t+nx*wave, y1+(y2-y1)*t+ny*wave))
         path = 'M ' + ' L '.join(f'{x:.2f},{y:.2f}' for x, y in points)
         body, spots = snake_colors[index % len(snake_colors)]
-        parts.append(f'<g filter="url(#shadow)"><title>Snake: {start} to {end}</title>')
+        parts.append(f'<g data-snake-start="{start}" data-snake-end="{end}" filter="url(#shadow)"><title>Snake: {start} to {end}</title>')
         for color, width in (("#28301b", 12), (body, 9)):
             parts.append(f'<path d="{path}" fill="none" stroke="{color}" stroke-width="{width}" stroke-linecap="round"/>')
         parts.append(f'<path d="{path}" fill="none" stroke="{spots}" stroke-width="3" stroke-dasharray="3 12" stroke-linecap="round"/>')

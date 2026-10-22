@@ -125,6 +125,34 @@ function placeToken(index,square,transition=true) {
   token.style.left=c.x+'%';token.style.top=c.y+'%';
   const label=document.getElementById(`position-${index}`);if(label)label.textContent=square===0?'At the start':`Square ${square}`;
 }
+async function followSnake(index,event,currentGeneration) {
+  const token=document.getElementById(`token-${index}`);
+  const path=root.querySelector(`.board-wrap .art [data-snake-start="${event.landing}"] path`);
+  if(!token||!path||reduced){placeToken(index,event.destination,false);await sleep(1050);return;}
+  const length=path.getTotalLength(), head=path.getPointAtLength(0), tail=path.getPointAtLength(length);
+  const start={x:parseFloat(token.style.left)*6,y:parseFloat(token.style.top)*6};
+  const finish=coords(event.destination,index);
+  // Pin tip follows the actual SVG artwork, not a second approximation of the curve.
+  token.style.transition='none';
+  const previousTransform=token.style.transform;
+  token.style.transform='translate(-50%,-100%)';
+  const started=performance.now();
+  await new Promise(resolve=>{
+    function frame(now){
+      if(currentGeneration!==generation){resolve();return;}
+      const elapsed=Math.min(1050,now-started);
+      let point;
+      if(elapsed<100){const t=elapsed/100;point={x:start.x+(head.x-start.x)*t,y:start.y+(head.y-start.y)*t};}
+      else if(elapsed<900){point=path.getPointAtLength(length*(elapsed-100)/800);}
+      else{const t=(elapsed-900)/150;point={x:tail.x+(finish.x*6-tail.x)*t,y:tail.y+(finish.y*6-tail.y)*t};}
+      token.style.left=point.x/6+'%';token.style.top=point.y/6+'%';
+      if(elapsed<1050)requestAnimationFrame(frame);else resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+  token.style.transform=previousTransform;
+  placeToken(index,event.destination,false);
+}
 function refreshButtons() {
   if(!game){const start=document.getElementById('start');if(start){start.disabled=pending;if(pending)start.textContent='Setting the table…';}return;}
   root.querySelectorAll('[data-roll]').forEach(b=>{const i=Number(b.dataset.roll);b.disabled=!canRoll(i);});
@@ -160,7 +188,10 @@ async function animate(event) {
  token?.classList.remove('moving');
  if(event.special){
   if(status)status.textContent=event.special==='ladder'?`A ladder! Climbing ${event.landing} → ${event.destination}.`:`A snake! Sliding ${event.landing} → ${event.destination}.`;
-  sound(event.special);token?.classList.add('jump');positions[index]=event.destination;placeToken(index,event.destination);await sleep(1050);token?.classList.remove('jump');
+  sound(event.special);
+  if(event.special==='snake')await followSnake(index,event,currentGeneration);
+  else{token?.classList.add('jump');placeToken(index,event.destination);await sleep(1050);token?.classList.remove('jump');}
+  positions[index]=event.destination;
  }
  await sleep(Math.max(220,(game.ready_at-serverNow())*1000+30));if(currentGeneration!==generation)return;
  positions[index]=event.destination;seen=event.id;busy=false;animPlayer=null;
