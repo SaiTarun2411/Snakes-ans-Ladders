@@ -51,3 +51,9 @@ python scripts/check_browser.py
 Set `GAME_TEST_URL` to test another local port or a deployed app. The checks cover four local players, computer turns, independent friend sessions, and mobile rendering.
 
 For deterministic Ludo browser checks, run `python scripts/check_ludo_browser.py`. This launches an isolated test-only server with sixes fixed for testing, and checks token choices, computer turns, sharing payloads, direct invitation links, multiplayer synchronisation and mobile rendering. Production rolls remain random.
+
+## Mobile fullscreen
+
+Tap **⛶** in the top bar to enter fullscreen and tap it again to exit. Both boards adapt to portrait and landscape, with player controls beside the board in short landscape screens. Browsers without a supported Fullscreen API use an expanded browser view; their browser toolbar may remain visible. Notch and home-indicator safe areas are respected.
+
+With the app running, `python scripts/check_fullscreen.py` checks native fullscreen, exit, both orientations, the browser fallback, and both games. `GAME_TEST_URL` can select another server.

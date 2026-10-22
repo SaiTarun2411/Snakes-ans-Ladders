@@ -12,6 +12,7 @@ let selectedGame=localStorage.getItem('clubhouse-game')==='ludo'?'ludo':'snakes'
 const isLudo=()=>game?.game_type==='ludo';
 const gameTitle=()=> (game?.game_type||selectedGame)==='ludo'?'LUDO':'SNAKES &amp; LADDERS';
 const boardArt=()=>data.boards?.[game?.game_type||selectedGame]||data.board;
+let expandedView=false, fullscreenFallback=false, frameStyleBefore=null, parentOverflowBefore=null;
 let pendingNonce = null;
 let pending = false, pendingAt = 0, busy = false, gameId = null, seen = 0;
 let renderedSignature = '', queue = [], positions = [], displayedDice = [], animPlayer = null;
@@ -63,7 +64,7 @@ function pin(color) {
   return `<svg viewBox="0 0 32 44" aria-hidden="true"><path d="M16 42C12 35 2 23 2 16a14 14 0 1 1 28 0c0 7-10 19-14 26Z" fill="${color}" stroke="white" stroke-width="2"/><ellipse cx="16" cy="15" rx="8" ry="8" fill="#fff"/><path d="M6 13a10 10 0 0 1 12-9" fill="none" stroke="#fff8" stroke-width="2" stroke-linecap="round"/></svg>`;
 }
 function dice(value=1) {return `<span class="die-grid" aria-hidden="true">${Array.from({length:9},(_,i)=>`<i class="pip ${PIPS[value]?.includes(i)?'':'empty'}"></i>`).join('')}</span>`;}
-function header() {return `<header><div class="brand"><button class="brand-mark game-switch" id="game-switch" aria-label="Switch game to ${selectedGame==='ludo'?'Snakes and Ladders':'Ludo'}" title="Switch games" ${game?'disabled':''}>⚄</button><span>${gameTitle()}<small>THE LITTLE BOARD GAME CLUB</small></span></div><div class="tools"><button class="quiet" id="sound" aria-label="${soundEnabled?'Mute':'Enable'} sound">${soundEnabled?'♫ Sound on':'♫ Sound off'}</button><button class="quiet" id="help" aria-label="How to play">?</button></div></header>`;}
+function header() {return `<header><div class="brand"><button class="brand-mark game-switch" id="game-switch" aria-label="Switch game to ${selectedGame==='ludo'?'Snakes and Ladders':'Ludo'}" title="Switch games" ${game?'disabled':''}>⚄</button><span>${gameTitle()}<small>THE LITTLE BOARD GAME CLUB</small></span></div><div class="tools"><button class="quiet" id="sound" aria-label="${soundEnabled?'Mute':'Enable'} sound">${soundEnabled?'♫ Sound on':'♫ Sound off'}</button><button class="quiet" id="fullscreen" aria-label="Enter fullscreen" title="Enter fullscreen">⛶</button><button class="quiet" id="help" aria-label="How to play">?</button></div></header>`;}
 
 function art() {return `<div class="hero-art"><div class="mini-board" aria-hidden="true">${boardArt()}</div><div class="art-label">${selectedGame==='ludo'?'Four tokens. One way home.':'100 squares. Endless surprises.'}</div><button class="floating-die game-switch" aria-label="Switch game to ${selectedGame==='ludo'?'Snakes and Ladders':'Ludo'}" title="Switch games">${dice(5)}</button><span class="switch-hint">Tap the dice to play ${selectedGame==='ludo'?'Snakes &amp; Ladders':'Ludo'} ↗</span></div>`;}
 
@@ -73,9 +74,65 @@ function shell(html) {
   root.innerHTML=`<div class="shell"><div class="content">${header()}${data.error?`<div class="error" role="alert">${esc(data.error)}</div>`:''}${html}${game?.status==='playing'?'':footer()}</div></div>`;
   document.getElementById('sound').onclick=()=>{unlockAudio();soundEnabled=!soundEnabled;localStorage.setItem('clubhouse-sound',soundEnabled?'on':'off');document.getElementById('sound').textContent=soundEnabled?'♫ Sound on':'♫ Sound off';document.getElementById('sound').setAttribute('aria-label',soundEnabled?'Mute sound':'Enable sound');const note=document.getElementById('audio-note');if(note)note.textContent=soundEnabled?'♫ Sound is on. Tap a dice to hear the game.':'♫ Sound is off. Turn it on at the top.';};
   document.getElementById('help').onclick=showHelp;
+  document.getElementById('fullscreen').onclick=toggleFullscreen;
+  updateFullscreenUI();
   root.querySelectorAll('.game-switch').forEach(button=>button.onclick=()=>{if(game)return;unlockAudio();selectedGame=selectedGame==='snakes'?'ludo':'snakes';localStorage.setItem('clubhouse-game',selectedGame);view='home';renderedSignature='';home();});
   resize();
 }
+function nativeFullscreen(){return document.fullscreenElement||document.webkitFullscreenElement;}
+function viewportSize(){
+  if(!nativeFullscreen())try{return {width:window.parent.visualViewport?.width||window.parent.innerWidth,height:window.parent.visualViewport?.height||window.parent.innerHeight};}catch(_){}
+  return {width:window.visualViewport?.width||innerWidth,height:window.visualViewport?.height||innerHeight};
+}
+function updateFullscreenUI(){
+  document.documentElement.classList.toggle('focus-mode',expandedView);
+  const size=viewportSize();
+  document.documentElement.style.setProperty('--view-height',size.height+'px');
+  document.documentElement.style.setProperty('--view-width',size.width+'px');
+  const button=document.getElementById('fullscreen');
+  if(button){button.textContent=expandedView?'⊡':'⛶';button.title=expandedView?'Exit fullscreen':'Enter fullscreen';button.setAttribute('aria-label',button.title);button.setAttribute('aria-pressed',String(expandedView));}
+}
+function fallbackFullscreen(enable){
+  fullscreenFallback=enable;
+  try{
+    const frame=window.frameElement;
+    if(enable){
+      frameStyleBefore=frame?.getAttribute('style')??null;
+      parentOverflowBefore=window.parent.document.documentElement.style.overflow;
+      if(frame)frame.style.cssText+=';position:fixed;inset:0;width:100vw;height:100dvh;z-index:2147483646;background:#101a2d;border:0;';
+      window.parent.document.documentElement.style.overflow='hidden';
+    }else{
+      if(frame){if(frameStyleBefore===null)frame.removeAttribute('style');else frame.setAttribute('style',frameStyleBefore);}
+      if(parentOverflowBefore!==null)window.parent.document.documentElement.style.overflow=parentOverflowBefore;
+    }
+  }catch(_){}
+}
+async function toggleFullscreen(){
+  if(expandedView){
+    if(nativeFullscreen()){
+      const exit=document.exitFullscreen||document.webkitExitFullscreen;
+      if(exit)try{await exit.call(document);}catch(_){}
+    }
+    if(fullscreenFallback)fallbackFullscreen(false);
+    expandedView=false;
+  }else{
+    const enter=document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen;
+    if(enter){try{await enter.call(document.documentElement);expandedView=true;}catch(_){expandedView=true;fallbackFullscreen(true);}}
+    else{expandedView=true;fallbackFullscreen(true);}
+  }
+  updateFullscreenUI();resize();
+}
+function fullscreenChanged(){
+  if(!fullscreenFallback)expandedView=Boolean(nativeFullscreen());
+  updateFullscreenUI();resize();
+}
+document.addEventListener('fullscreenchange',fullscreenChanged);
+document.addEventListener('webkitfullscreenchange',fullscreenChanged);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&fullscreenFallback&&expandedView)toggleFullscreen();});
+window.addEventListener('resize',()=>{updateFullscreenUI();resize();});
+window.addEventListener('orientationchange',updateFullscreenUI);
+window.visualViewport?.addEventListener('resize',updateFullscreenUI);
+try{window.parent.visualViewport?.addEventListener('resize',updateFullscreenUI);}catch(_){}
 function home() {
   shell(`<section class="hero"><div><span class="pill"><i></i> YOUR NEXT FAVOURITE GAME NIGHT</span><h1>A little luck.<br>A big <span>adventure.</span></h1><p>${selectedGame==='ludo'?'Four colourful tokens. A race around the board. Bring your favourite people home for the win.':'Climb a little higher. Dodge a slippery surprise. Bring your favourite people along for the ride.'}</p></div>${art()}</section><div class="section-heading"><h2>How are we playing?</h2><span>Pick your kind of company</span></div><section class="mode-grid"><button class="mode-card" data-mode="friends" style="--accent:var(--mint)"><span class="icon">♧</span><span class="arrow">↗</span><h3>Play with friends</h3><p>A private room. Your favourite people.<br>Join from different devices.</p></button><button class="mode-card" data-mode="computer" style="--accent:var(--purple)"><span class="icon">⚙</span><span class="arrow">↗</span><h3>Play with computer</h3><p>A worthy little rival.<br>You versus up to three computers.</p></button><button class="mode-card" data-mode="local" style="--accent:var(--coral)"><span class="icon">⚄</span><span class="arrow">↗</span><h3>Play local</h3><p>Pass the screen. Share the fun.<br>One device, one to four players.</p></button></section>`);
   root.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{unlockAudio();view=button.dataset.mode;count=2;setup();});
