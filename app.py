@@ -109,11 +109,11 @@ def board_svg(positions):
 
 
 def main():
-    st.set_page_config(page_title="Snakes & Ladders", page_icon="🎲", layout="wide")
+    st.set_page_config(page_title="Snakes and Ladders", page_icon="🎲", layout="wide")
     if "game" not in st.session_state:
         new_game()
     game = st.session_state.game
-    st.title("🐍 Snakes & Ladders")
+    st.title("🐍 Snakes and Ladders")
     st.caption("Two players · One board · First to reach 100 wins")
 
     board, controls = st.columns([3, 2])
