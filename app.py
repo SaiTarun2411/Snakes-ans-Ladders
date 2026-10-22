@@ -19,7 +19,10 @@ def rooms():
 
 
 @st.cache_data
-def artwork():
+def artwork(game_type='snakes'):
+    if game_type == 'ludo':
+        from ludo import board_svg as ludo_board
+        return ludo_board()
     return board_svg([]).replace('width="640" height="740" viewBox="-20 -105 640 740"',
                                  'width="600" height="600" viewBox="0 0 600 600"')
 
@@ -37,26 +40,32 @@ def dispatch(action):
         count = int(action.get('count', 2))
         if mode == 'computer' and count < 2:
             raise GameError('Choose at least one computer opponent.')
-        state.local_game = new_game(count, mode)
+        state.local_game = new_game(count, mode, game_type=action.get('game_type', 'snakes'))
         state.room = None
     elif kind == 'create':
-        code = rooms().create(state.client, action.get('name'), int(action.get('count', 2)))
+        code = rooms().create(state.client, action.get('name'), int(action.get('count', 2)), action.get('game_type', 'snakes'))
         state.room, state.local_game = code, None
     elif kind == 'join':
         code = str(action.get('code', '')).strip().upper()
         rooms().join(code, state.client, action.get('name'))
         state.room, state.local_game = code, None
-    elif state.room and kind in ('start', 'roll', 'restart'):
-        rooms().action(state.room, state.client, kind, action.get('version'))
-    elif state.local_game and kind == 'roll':
+    elif state.room and kind in ('start', 'roll', 'move', 'restart'):
+        rooms().action(state.room, state.client, kind, action.get('version'), action.get('token'))
+    elif state.local_game and kind in ('roll', 'move'):
         game = state.local_game
         computer = game['players'][game['turn']]['kind'] == 'computer'
         if computer != bool(action.get('computer')):
             raise GameError('Wait for the active player.')
-        play_turn(game, action.get('version'))
+        if kind == 'move':
+            if game.get('game_type') != 'ludo':
+                raise GameError('Token selection is only used in Ludo.')
+            from ludo import move_ludo
+            move_ludo(game, action.get('version'), action.get('token'))
+        else:
+            play_turn(game, action.get('version'))
     elif state.local_game and kind == 'restart':
         game = state.local_game
-        state.local_game = new_game(len(game['players']), game['mode'])
+        state.local_game = new_game(len(game['players']), game['mode'], game_type=game.get('game_type', 'snakes'))
     else:
         raise GameError('Choose a game to start playing.')
 
@@ -66,12 +75,16 @@ def payload():
     game, seat, capacity = state.local_game, None, None
     if state.room:
         game, seat, capacity = rooms().snapshot(state.room, state.client)
-    return {'game': game, 'seat': seat, 'room': state.room, 'capacity': capacity,
+    from ludo import layout
+    return {'invite': str(st.query_params.get('room', ''))[:6].upper(),
+            'invite_game': 'ludo' if st.query_params.get('game') == 'ludo' else 'snakes',
+            'boards': {'snakes': artwork(), 'ludo': artwork('ludo')}, 'ludo_layout': layout(),
+            'game': game, 'seat': seat, 'room': state.room, 'capacity': capacity,
             'error': state.error, 'ack': state.last_nonce, 'board': artwork(), 'now': time.time()}
 
 
 def main():
-    st.set_page_config(page_title='Snakes and Ladders · Clubhouse', page_icon='🎲', layout='wide', initial_sidebar_state='collapsed')
+    st.set_page_config(page_title='Board Game Clubhouse · Snakes & Ladders + Ludo', page_icon='🎲', layout='wide', initial_sidebar_state='collapsed')
     st.markdown('''<style>
       [data-testid="stHeader"], footer {display:none}
       .stMainBlockContainer {padding:0!important;max-width:none!important}

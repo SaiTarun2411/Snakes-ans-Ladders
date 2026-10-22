@@ -14,13 +14,15 @@ class GameError(ValueError):
     pass
 
 
-def new_game(count=2, mode='local', name='You'):
+def new_game(count=2, mode='local', name='You', game_type='snakes'):
     if not isinstance(count, int) or not 1 <= count <= 4:
         raise GameError('Choose between one and four players.')
     if mode not in ('local', 'computer', 'friends'):
         raise GameError('Choose a game mode.')
-    return {
-        'id': uuid.uuid4().hex, 'mode': mode, 'turn': 0, 'winner': None,
+    if game_type not in ('snakes', 'ludo'):
+        raise GameError('Choose Snakes and Ladders or Ludo.')
+    game = {
+        'game_type': game_type, 'id': uuid.uuid4().hex, 'mode': mode, 'turn': 0, 'winner': None,
         'players': [{'name': (name if i == 0 else f'Computer {i}') if mode == 'computer' else f'Player {i+1}',
                      'kind': 'computer' if mode == 'computer' and i > 0 else 'human',
                      'position': 0} for i in range(count)],
@@ -28,9 +30,17 @@ def new_game(count=2, mode='local', name='You'):
         'message': 'The adventure starts here. Roll the dice!', 'status': 'playing',
     }
 
+    if game_type == 'ludo':
+        from ludo import initialise
+        initialise(game)
+    return game
+
 
 def play_turn(game, expected_version, roll=None, now=None):
     """One atomic move, including the exact walking path used by the animation."""
+    if game.get('game_type') == 'ludo':
+        from ludo import roll_ludo
+        return roll_ludo(game, expected_version, roll, now)
     now = time.time() if now is None else now
     if game['status'] != 'playing' or game['winner'] is not None:
         raise GameError('This game is not taking turns right now.')
@@ -91,7 +101,7 @@ class RoomStore:
         room['updated'] = time.time()
         return room
 
-    def create(self, client, name, capacity):
+    def create(self, client, name, capacity, game_type='snakes'):
         if capacity not in (2, 3, 4):
             raise GameError('Friend rooms need two to four players.')
         with self.lock:
@@ -101,7 +111,7 @@ class RoomStore:
             code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(6))
             while code in self.rooms:
                 code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(6))
-            game = new_game(1, 'friends')
+            game = new_game(1, 'friends', game_type=game_type)
             game['status'] = 'lobby'
             game['players'][0]['name'] = clean_name(name)
             self.rooms[code] = {'game': game, 'members': [client], 'capacity': capacity, 'updated': time.time()}
@@ -115,7 +125,10 @@ class RoomStore:
             if room['game']['status'] != 'lobby' or len(room['members']) >= room['capacity']:
                 raise GameError('This room is full or the game has already started.')
             room['members'].append(client)
-            room['game']['players'].append({'name': clean_name(name), 'kind': 'human', 'position': 0})
+            player = {'name': clean_name(name), 'kind': 'human', 'position': 0}
+            if room['game'].get('game_type') == 'ludo':
+                player['tokens'] = [-1]*4
+            room['game']['players'].append(player)
             room['game']['dice'].append(None)
 
     def snapshot(self, code, client):
@@ -125,7 +138,7 @@ class RoomStore:
                 raise GameError('Join this room first.')
             return deepcopy(room['game']), room['members'].index(client), room['capacity']
 
-    def action(self, code, client, action, version=None):
+    def action(self, code, client, action, version=None, token=None):
         with self.lock:
             room = self._room(code)
             if client not in room['members']:
@@ -138,16 +151,22 @@ class RoomStore:
                 if len(room['members']) != room['capacity']:
                     raise GameError('Wait for all players to join.')
                 game['status'] = 'playing'
-            elif action == 'roll':
+            elif action in ('roll', 'move'):
                 if seat != game['turn']:
                     raise GameError('It is another player’s turn.')
-                play_turn(game, version)
+                if action == 'move':
+                    if game.get('game_type') != 'ludo':
+                        raise GameError('Token selection is only used in Ludo.')
+                    from ludo import move_ludo
+                    move_ludo(game, version, token)
+                else:
+                    play_turn(game, version)
             elif action == 'restart':
                 if seat != 0:
                     raise GameError('Only the room host can start a rematch.')
                 if game['winner'] is None:
                     raise GameError('Finish this game before starting a rematch.')
-                fresh = new_game(len(game['players']), 'friends')
+                fresh = new_game(len(game['players']), 'friends', game_type=game.get('game_type', 'snakes'))
                 for i, p in enumerate(game['players']):
                     fresh['players'][i]['name'] = p['name']
                 room['game'] = fresh

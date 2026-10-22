@@ -31,7 +31,7 @@ jobs:
 
       - name: Check rules, friend rooms, and Streamlit startup
         run: |
-          python -m py_compile app.py game.py board.py
+          python -m py_compile app.py game.py board.py ludo.py
           python -m unittest discover -s tests -v
           python - <<'PYTEST'
           from streamlit.testing.v1 import AppTest
